@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Label Editor</title>
+    <link rel="stylesheet" href="label_editor.css">
+</head>
+<body>
+    <h1>Label Editor</h1>
+    <div class="overlay d-none" id="label_editor">
+        <div class="canvas-container">
+            <div class="canvas-wrapper">
+                <canvas id="image-canvas"></canvas>
+            </div>
+
+            <div class="box-list-wrapper">
+                <button class="button-close" id="close-button">
+                  <span class="X"></span>
+                  <span class="Y"></span>
+                </button>
+
+                <div class="ml-1 object-list"></div>
+                <button id="save-button" class="button-label">Save</button>
+            </div>
+
+        </div>
+    </div>
+
+    <input id="open_image" type="file" placeholder="Open image" onchange="open_image()"/>
+    <button onclick="run()">Run</button>
+    <script src="label_editor.js"></script>
+</body>
+</html>
