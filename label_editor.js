@@ -1,4 +1,5 @@
-let img = null;
+// Initialize the variables
+let objects = [];
 let image = new Image();
 
 
@@ -14,7 +15,6 @@ function computeScaleFactor(width,
                             height,
                             maxWidth,
                             maxHeight) {
-
     if (width > height) {
         return maxWidth / width;
     }
@@ -35,21 +35,26 @@ function run_label_editor(imageSrc,
                           callback_close,
                           options = {}) {
 
-    let polygons = initialPolygons;
-    image = new Image();
+    objects = [];
 
     // Default values for options
-    let { scale = 1, borderWidth = 2, borderColor = '#FF0000', backgroundColor = 'rgba(255, 0, 0, 0.5)', polygonCloseThreshold = 10 } = options;
+    let {
+        scale = 1,
+        borderWidth = 2,
+        borderColor = '#FF0000',
+        backgroundColor = 'rgba(255, 0, 0, 0.5)',
+        polygonCloseThreshold = 10
+    } = options;
 
 
     // Get the overlay and container elements
-    const overlay = document.querySelector('.overlay');
-    const container = document.querySelector('.canvas-container');
-    const polygonList = container.querySelector('.object-list');
+    const overlay = document.getElementById('label-editor');
+    const polygonList = document.getElementById('object-list');
     const canvas = document.getElementById('image-canvas');
     const saveButton = document.getElementById('save-button');
     const closeButton = document.getElementById('close-button');
     const ctx = canvas.getContext('2d');
+    let polygonFinalized = false;  // Flag to track if the polygon is finalized
 
     // Show the overlay
     overlay.classList.remove('d-none');
@@ -63,8 +68,8 @@ function run_label_editor(imageSrc,
     let startX, startY; // Start coordinates of the polygon
     let tempLineStart = null; // Start coordinates of the temporary line
 
-    const percentage_width_of_canvas = 80; // Percentage of the width of the canvas in the parent element
-    const percentage_height_of_canvas = 80; // Percentage of the height of the canvas in the parent element
+    const percentage_width_of_canvas = 90; // Percentage of the width of the canvas in the parent element
+    const percentage_height_of_canvas = 90; // Percentage of the height of the canvas in the parent element
 
     // Compute the width and height of the canvas
     const max_width = canvas.parentElement.clientWidth * percentage_width_of_canvas / 100;
@@ -75,49 +80,82 @@ function run_label_editor(imageSrc,
         options.scale = computeScaleFactor(image.width, image.height, max_width, max_height);
         canvas.width = image.width * options.scale;
         canvas.height = image.height * options.scale;
+        initialPolygons.forEach(coordinates => {
+            const vertices = [];
+            coordinates.forEach(coordinate => {
+                vertices.push({x: coordinate[0] * options.scale, y: coordinate[1] * options.scale});
+            })
+            let currentObject = {
+                vertices: vertices,
+                borderWidth: borderWidth,
+                borderColor: borderColor,
+                backgroundColor: backgroundColor
+            };
 
+            objects.push(currentObject);
+        })
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        drawAllPolygons(ctx, polygons, scale, borderWidth, borderColor);
+        drawAllPolygons(ctx, objects, scale, borderWidth, borderColor);
     };
 
     image.src = imageSrc;
 
+    // Remove previous event listeners
+    canvas.removeEventListener('mousedown', onMouseDown);
+    canvas.removeEventListener('mousemove', onMouseMove);
+    canvas.removeEventListener('mouseup', onMouseUp);
+    canvas.removeEventListener('contextmenu', onContextMenu);
+    saveButton.removeEventListener('click', saveButtonOnClick);
+    closeButton.removeEventListener('click', closeButtonOnClick);
 
-    // Add event listeners to the canvas
-    canvas.addEventListener('mousedown', (e) => {
+    // Add new event listeners
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mouseup', onMouseUp);
+    canvas.addEventListener('contextmenu', onContextMenu);
+    // Add event listeners to the save and close buttons
+    saveButton.addEventListener('click', saveButtonOnClick);
+
+    closeButton.addEventListener('click', closeButtonOnClick);
+
+
+    // Function to handle mouse down event
+    function onMouseDown(e) {
         const x = e.offsetX;
         const y = e.offsetY;
 
-
-        // Check if the click is inside the canvas
-        if (isDrawing) {
+        // Check if the user is currently drawing a polygon
+        if (isDrawing && !polygonFinalized) {
             if (currentPolygon.length > 0) {
-                // Check if the click is close to the start point
+                // Check if the user clicked near the starting point to close the polygon
                 const distanceToStart = Math.hypot(currentPolygon[0].x - x / scale, currentPolygon[0].y - y / scale);
                 if (distanceToStart < polygonCloseThreshold) {
-                    // Close the polygon
                     currentPolygon.push({ x: x / scale, y: y / scale });
-                    polygons.push({ vertices: currentPolygon, borderWidth, borderColor, backgroundColor });
+                    objects.push({ vertices: currentPolygon, borderWidth, borderColor, backgroundColor });
                     currentPolygon = [];
                     isDrawing = false;
+                    polygonFinalized = true;  // Mark polygon as finalized to prevent duplicate push
                     drawCanvas(); // Finalize drawing
                 } else {
-                    // Add new point and draw line
+                    // If not closing the polygon, add a new point
                     currentPolygon.push({ x: x / scale, y: y / scale });
                     drawCanvas(); // Draw temporary line and points
                 }
             }
-        } else {
-            // Start drawing new polygon
+        } else if (!isDrawing) {
+            // Start drawing a new polygon
             isDrawing = true;
+            polygonFinalized = false;  // Reset flag when starting a new polygon
             startX = x;
             startY = y;
             currentPolygon = [{ x: x / scale, y: y / scale }];
             tempLineStart = { x: x, y: y };
             drawCanvas(); // Initial drawing
         }
-    });
-    canvas.addEventListener('mousemove', (e) => {
+    }
+
+    // Function to handle mouse move event
+    function onMouseMove(e) {
         if (isDrawing) {
             const x = e.offsetX;
             const y = e.offsetY;
@@ -146,15 +184,17 @@ function run_label_editor(imageSrc,
                 }
             }
         }
-    });
-    canvas.addEventListener('mouseup', (e) => {
+    }
+
+    // Function to handle mouse up event
+    function onMouseUp(e) {
         if (isDrawing) {
             const x = e.offsetX;
             const y = e.offsetY;
 
             if (tempLineStart) {
                 tempLineStart = null;
-                const newPoint = { x: x / scale, y: y / scale };
+                const newPoint = {x: x / scale, y: y / scale};
                 if (currentPolygon.length > 0) {
                     currentPolygon.push(newPoint);
                 }
@@ -163,10 +203,10 @@ function run_label_editor(imageSrc,
                 drawCanvas();
             }
         }
-    });
+    }
 
-    // Add event listener to the canvas to cancel polygon creation
-    canvas.addEventListener('contextmenu', (e) => {
+    // Function to handle context menu event
+    function onContextMenu(e) {
         e.preventDefault();
         if (isDrawing) {
             // Cancel polygon creation
@@ -174,10 +214,46 @@ function run_label_editor(imageSrc,
             currentPolygon = [];
             drawCanvas();
         }
-    });
+    }
+
+    // Function to handle save button click
+    function saveButtonOnClick() {
+        // Transport the object to the original size and return as array of polygons with int coordinates
+        objects = objects.map(object => {
+            return object.vertices.map(vertex => {
+                return [Math.round(vertex.x / options.scale), Math.round(vertex.y / options.scale)];
+            });
+        });
+        // Remove previous event listeners
+        canvas.removeEventListener('mousedown', onMouseDown);
+        canvas.removeEventListener('mousemove', onMouseMove);
+        canvas.removeEventListener('mouseup', onMouseUp);
+        canvas.removeEventListener('contextmenu', onContextMenu);
+        saveButton.removeEventListener('click', saveButtonOnClick);
+        closeButton.removeEventListener('click', closeButtonOnClick);
+
+        callback_save(objects);
+        overlay.classList.add('d-none');
+    }
+
+
+    // Function to handle close button click
+    function closeButtonOnClick() {
+        overlay.classList.add('d-none');
+        // Remove previous event listeners
+        canvas.removeEventListener('mousedown', onMouseDown);
+        canvas.removeEventListener('mousemove', onMouseMove);
+        canvas.removeEventListener('mouseup', onMouseUp);
+        canvas.removeEventListener('contextmenu', onContextMenu);
+        saveButton.removeEventListener('click', saveButtonOnClick);
+        closeButton.removeEventListener('click', closeButtonOnClick);
+
+        console.log("Close button clicked");
+        callback_close();
+    }
 
     /**
-     * Draw the canvas with the image and polygons
+     * Draw the canvas with the image and objects
      */
     function drawCanvas() {
 
@@ -185,8 +261,8 @@ function run_label_editor(imageSrc,
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-        // Draw all polygons
-        drawAllPolygons(ctx, polygons, scale, borderWidth, borderColor);
+        // Draw all objects
+        drawAllPolygons(ctx, objects, scale, borderWidth, borderColor);
 
         // Draw the current polygon if it is being drawn
         if (currentPolygon.length > 0) {
@@ -219,21 +295,19 @@ function run_label_editor(imageSrc,
     }
 
     /**
-     * Draw all polygons on the canvas
+     * Draw all objects on the canvas
      * @param ctx - Canvas context
-     * @param polygons - List of polygons to draw
+     * @param polygons - List of objects to draw
      * @param scale - Scale factor to fit the image into the canvas
-     * @param borderWidth - Border width to draw the polygons
-     * @param borderColor - Border color to draw the polygons
+     * @param borderWidth - Border width to draw the objects
+     * @param borderColor - Border color to draw the objects
      */
 
     function drawAllPolygons(ctx, polygons, scale, borderWidth, borderColor) {
         const objectList = document.querySelector('.object-list');
-
         // Clear the polygon list
         objectList.innerHTML = '';
-
-        // Draw all polygons
+        // Draw all objects
         polygons.forEach((polygon, index) => {
             // Draw background
             ctx.fillStyle = polygon.backgroundColor;
@@ -243,7 +317,6 @@ function run_label_editor(imageSrc,
 
             // Draw the border
             ctx.lineWidth = borderWidth;
-            
             ctx.beginPath();
             ctx.moveTo(polygon.vertices[0].x * scale, polygon.vertices[0].y * scale);
 
@@ -266,16 +339,15 @@ function run_label_editor(imageSrc,
             ctx.fillStyle = "#FF0000";
             ctx.fillText("Line " + (index + 1), polygon.vertices[0].x * scale, polygon.vertices[0].y * scale + 30);
 
-
             addPolygonToList(polygon, index, polygons, scale, borderWidth, borderColor);
         });
     }
 
     /**
-     * Add a polygon to the list of polygons in the UI
+     * Add a polygon to the list of objects in the UI
      * @param polygon - Polygon to add to the list
      * @param index - Index of the polygon in the list
-     * @param polygons - List of polygons
+     * @param polygons - List of objects
      * @param scale - Scale factor to fit the image into the canvas
      * @param borderWidth - Border width
      * @param borderColor - Border color
@@ -293,7 +365,7 @@ function run_label_editor(imageSrc,
 
         // Add class and content to the polygon item
         polygonItem.classList.add('object-item');
-        polygonItem.innerHTML = `<h4>Line ${index + 1}</h4>`;
+        polygonItem.innerHTML = `<h5>Line ${index + 1}</h5>`;
 
         // Add event listener to delete button
         deleteButton.addEventListener('click', () => deletePolygon(index, polygons, scale, borderWidth, borderColor));
@@ -305,9 +377,9 @@ function run_label_editor(imageSrc,
 
 
     /**
-     * Delete a polygon from the list of polygons
+     * Delete a polygon from the list of objects
      * @param index - Index of the polygon to delete
-     * @param polygons - List of polygons
+     * @param polygons - List of objects
      * @param scale - Scale factor
      * @param borderWidth - Border
      * @param borderColor - Border color
@@ -315,7 +387,7 @@ function run_label_editor(imageSrc,
     function deletePolygon(index, polygons, scale, borderWidth, borderColor) {
 
         // Get the polygon list and canvas
-        const polygonList = document.querySelector('.object-list');
+        const polygonList = document.getElementById('object-list');
         const canvas = document.getElementById('image-canvas');
         const ctx = canvas.getContext('2d');
 
@@ -325,32 +397,20 @@ function run_label_editor(imageSrc,
         // Clear the polygon list
         polygonList.innerHTML = '';
 
-        // Add all polygons to the list
+        // Add all objects to the list
         polygons.forEach((polygon, i) => addPolygonToList(polygon, i, polygons, scale, borderWidth, borderColor));
 
         // Redraw the canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw the image and polygons
+        // Draw the image and objects
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-        // Draw all polygons
+        // Draw all objects
         drawAllPolygons(ctx, polygons, scale, borderWidth, borderColor);
     }
 
-
-    // Add event listeners to the save and close buttons
-    saveButton.addEventListener('click', () => {
-        callback_save(polygons);
-        overlay.classList.add('d-none');
-    });
-
-    closeButton.addEventListener('click', () => {
-        overlay.classList.add('d-none');
-        callback_close();
-    });
 }
-
 function run() {
     run_label_editor(img);
 }
